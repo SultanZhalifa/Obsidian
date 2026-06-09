@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: "OBSIDIAN — Trading Terminal",
   description:
     "Enterprise-grade real-time crypto trading terminal. Live market data, technical indicators, paper trading and alerts.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export const viewport: Viewport = {
