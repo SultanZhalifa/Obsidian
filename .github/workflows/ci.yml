@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://obsidian:obsidian@localhost:5432/obsidian
+      SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests (indicators + P&L)
+        run: npm run test --workspace packages/core
+      - name: Build web
+        run: npm run build --workspace apps/web
+
+  e2e:
+    name: End-to-end (real data)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:2.17.2-pg16
+        env:
+          POSTGRES_USER: obsidian
+          POSTGRES_PASSWORD: obsidian
+          POSTGRES_DB: obsidian
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U obsidian -d obsidian"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://obsidian:obsidian@localhost:5432/obsidian
+      SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+      NEXT_PUBLIC_GATEWAY_WS_URL: ws://localhost:8080/stream
+      GATEWAY_HTTP_URL: http://localhost:8080
+      SYMBOLS: btcusdt,ethusdt,solusdt,bnbusdt,xrpusdt
+      TIMEFRAMES: 1m,5m,15m,1h,4h,1d
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        run: npm run db:migrate && npm run timescale --workspace packages/db
+      - name: Build web
+        run: npm run build --workspace apps/web
+      - name: Install Playwright browser
+        run: npx --workspace apps/web playwright install --with-deps chromium
+      - name: Start gateway
+        run: |
+          npm run start --workspace services/market-gateway > gateway.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then echo "gateway up"; break; fi
+            sleep 2
+          done
+      - name: Start web
+        run: |
+          npm run start --workspace apps/web > web.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/login > /dev/null; then echo "web up"; break; fi
+            sleep 2
+          done
+      - name: Run E2E
+        run: npm run e2e --workspace apps/web
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report

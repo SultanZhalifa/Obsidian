@@ -1,0 +1,76 @@
+import { test, expect } from "@playwright/test";
+
+/**
+ * End-to-end smoke test of the full real-data flow:
+ *   register (or login) -> dashboard with live tickers -> chart -> place a
+ *   paper order -> see the position -> create an alert -> sign out.
+ *
+ * A unique email per run keeps the test idempotent against a persistent DB.
+ */
+const stamp = Date.now();
+const email = `e2e_${stamp}@obsidian.test`;
+const password = "playwright-strong-pass";
+
+test.describe.configure({ mode: "serial" });
+
+test("register and land on the dashboard with live markets", async ({ page }) => {
+  await page.goto("/register");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("heading", { name: "Markets" })).toBeVisible();
+  // A real ticker row exists.
+  await expect(page.getByText("BTC", { exact: false }).first()).toBeVisible();
+});
+
+test("open the chart and see the price header", async ({ page }) => {
+  await login(page);
+  await page.goto("/chart?symbol=BTCUSDT&tf=15m");
+  // The chart canvas mounts and the timeframe switcher is present.
+  await expect(page.getByRole("button", { name: "EMA 12/26" })).toBeVisible();
+  await expect(page.locator("canvas").first()).toBeVisible();
+});
+
+test("place a paper order and see an open position", async ({ page }) => {
+  await login(page);
+  await page.goto("/trade");
+  await expect(page.getByRole("heading", { name: "Paper trading" })).toBeVisible();
+
+  // Wait for a live price to populate, then buy.
+  await expect(page.getByText("Live price")).toBeVisible();
+  await page.getByLabel(/Quantity/).fill("0.01");
+  await page.getByRole("button", { name: /Buy \/ Long/ }).click();
+
+  // The order toast and the new position both appear.
+  await expect(page.getByText(/Order filled|Bought/).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Long" }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("create a price alert", async ({ page }) => {
+  await login(page);
+  await page.goto("/alerts");
+  await page.getByLabel("Price").fill("1");
+  // price_above 1 will be true immediately for BTC; that's fine for the test.
+  await page.getByRole("button", { name: "Create alert" }).click();
+  await expect(page.getByText(/Alert created|Watching|Triggered/).first()).toBeVisible();
+});
+
+test("sign out returns to login", async ({ page }) => {
+  await login(page);
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: /Account menu/i }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login/);
+});
+
+async function login(page: import("@playwright/test").Page) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+}

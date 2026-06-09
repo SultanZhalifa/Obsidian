@@ -1,0 +1,25 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
+import { Sidebar } from "@/components/sidebar";
+import { TopBar } from "@/components/topbar";
+import { AlertListener } from "@/components/alert-listener";
+
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  return (
+    <div className="flex h-dvh flex-col overflow-hidden bg-bg-0">
+      <TopBar user={user} />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar role={user.role} />
+        <main className="min-w-0 flex-1 overflow-auto">{children}</main>
+      </div>
+      <AlertListener userId={user.id} />
+    </div>
+  );
+}
