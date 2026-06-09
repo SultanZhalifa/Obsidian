@@ -212,3 +212,51 @@ export async function getHeldSymbols(accountId: string): Promise<string[]> {
     .where(eq(positions.accountId, accountId));
   return rows.map((r) => r.symbol);
 }
+
+/**
+ * Close an open position by submitting a market order for the full open
+ * quantity in the opposite direction. Reuses executeOrder, so it shares the
+ * same live-price fill, fee, P&L and cash accounting. No-op if already flat.
+ */
+export async function closePosition(
+  userId: string,
+  symbol: string,
+): Promise<OrderResult> {
+  const account = await getAccount(userId);
+  if (!account) return { ok: false, error: "No trading account found." };
+
+  const rows = await db
+    .select()
+    .from(positions)
+    .where(and(eq(positions.accountId, account.id), eq(positions.symbol, symbol)))
+    .limit(1);
+  const pos = rows[0];
+  if (!pos || Math.abs(pos.quantity) < 1e-9) {
+    return { ok: false, error: "No open position to close." };
+  }
+
+  // Long (qty > 0) closes with a sell; short closes with a buy.
+  const side: OrderSide = pos.quantity > 0 ? "sell" : "buy";
+  return executeOrder(userId, symbol, side, Math.abs(pos.quantity));
+}
+
+/**
+ * Reset a user's paper-trading account: wipe trades + positions and restore the
+ * cash balance to the original starting amount. Runs in a transaction so the
+ * account is never left half-reset. Returns the restored starting cash.
+ */
+export async function resetAccount(userId: string): Promise<number> {
+  const account = await getAccount(userId);
+  if (!account) throw new Error("No trading account found.");
+
+  await db.transaction(async (tx) => {
+    await tx.delete(trades).where(eq(trades.accountId, account.id));
+    await tx.delete(positions).where(eq(positions.accountId, account.id));
+    await tx
+      .update(accounts)
+      .set({ cash: account.startingCash })
+      .where(eq(accounts.id, account.id));
+  });
+
+  return account.startingCash;
+}

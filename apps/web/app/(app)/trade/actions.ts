@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { placeOrderSchema } from "@obsidian/core";
+import { placeOrderSchema, symbolSchema } from "@obsidian/core";
 import { getCurrentUser } from "@/lib/auth";
-import { executeOrder } from "@/lib/trading";
+import { executeOrder, closePosition, resetAccount } from "@/lib/trading";
 import { assertSameOrigin, clientIp, rateLimit } from "@/lib/security";
 import { audit } from "@/lib/audit";
 
@@ -48,4 +48,39 @@ export async function placeOrderAction(
     ok: true,
     message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol.replace("USDT", "")} at ${result.fillPrice}.`,
   };
+}
+
+/** Close a single open position at the live price (one-click flatten). */
+export async function closePositionAction(formData: FormData): Promise<void> {
+  await assertSameOrigin();
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const ip = (await clientIp()) ?? "unknown";
+  const limit = rateLimit(`order:${user.id}`, 20, 1);
+  if (!limit.allowed) return;
+
+  const parsed = symbolSchema.safeParse(formData.get("symbol"));
+  if (!parsed.success) return;
+
+  const result = await closePosition(user.id, parsed.data);
+  if (result.ok) {
+    await audit(user.id, "position.closed", { symbol: parsed.data, fillPrice: result.fillPrice }, ip);
+  }
+  revalidatePath("/trade");
+}
+
+/** Reset the paper-trading account back to its starting cash (destructive). */
+export async function resetAccountAction(): Promise<void> {
+  await assertSameOrigin();
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const ip = (await clientIp()) ?? "unknown";
+  const limit = rateLimit(`reset:${user.id}`, 3, 0.05);
+  if (!limit.allowed) return;
+
+  const startingCash = await resetAccount(user.id);
+  await audit(user.id, "account.reset", { startingCash }, ip);
+  revalidatePath("/trade");
 }

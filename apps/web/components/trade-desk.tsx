@@ -5,6 +5,8 @@ import type { Account, PositionRow, Trade } from "@obsidian/db/schema";
 import { Panel, Stat, signClass } from "./ui";
 import { PositionsTable } from "./positions-table";
 import { OrderTicket } from "./order-ticket";
+import { EquityCurve } from "./equity-curve";
+import { ResetAccountButton } from "./reset-account-button";
 import {
   formatUsd,
   formatSignedUsd,
@@ -19,11 +21,13 @@ export function TradeDesk({
   account,
   positions,
   trades,
+  equityCurve,
   symbols,
 }: {
   account: Account;
   positions: PositionRow[];
   trades: Trade[];
+  equityCurve: { time: number; equity: number }[];
   symbols: string[];
 }) {
   const [unrealized, setUnrealized] = useState(0);
@@ -46,7 +50,10 @@ export function TradeDesk({
       </div>
 
       {/* Account summary */}
-      <Panel title="Account">
+      <Panel
+        title="Account"
+        actions={<ResetAccountButton />}
+      >
         <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
           <Stat label="Equity" value={formatUsd(equity)} />
           <Stat label="Cash" value={formatUsd(account.cash)} />
@@ -62,6 +69,11 @@ export function TradeDesk({
             valueClassName={signClass(totalReturn)}
           />
         </div>
+      </Panel>
+
+      {/* Equity curve (realized) */}
+      <Panel title="Equity curve" bodyClassName="overflow-hidden p-2">
+        <EquityCurve points={equityCurve} startingCash={account.startingCash} />
       </Panel>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">

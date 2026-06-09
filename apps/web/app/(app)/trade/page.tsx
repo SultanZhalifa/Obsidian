@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, ensureAccount } from "@/lib/auth";
-import { getAccount, getPositions, getTrades } from "@/lib/trading";
+import {
+  getAccount,
+  getPositions,
+  getTrades,
+  getRealizedEquityCurve,
+} from "@/lib/trading";
 import { WATCHLIST } from "@/lib/env";
 import { TradeDesk } from "@/components/trade-desk";
 
@@ -14,9 +19,10 @@ export default async function TradePage() {
   const account = await getAccount(user.id);
   if (!account) redirect("/login");
 
-  const [positions, trades] = await Promise.all([
+  const [positions, trades, equityCurve] = await Promise.all([
     getPositions(account.id),
     getTrades(account.id, 100),
+    getRealizedEquityCurve(account.id, account.startingCash),
   ]);
 
   return (
@@ -24,6 +30,7 @@ export default async function TradePage() {
       account={account}
       positions={positions}
       trades={trades}
+      equityCurve={equityCurve}
       symbols={WATCHLIST}
     />
   );

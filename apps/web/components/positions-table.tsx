@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { PositionRow } from "@obsidian/db/schema";
 import type { ServerMessage } from "@obsidian/core";
 import { getGatewayClient } from "@/lib/ws-client";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/format";
 import { signClass, EmptyState } from "./ui";
 import { IconWallet } from "./icons";
+import { closePositionAction } from "@/app/(app)/trade/actions";
 
 interface LivePos {
   row: PositionRow;
@@ -87,6 +88,7 @@ export function PositionsTable({
             <th className="px-4 py-2 text-right font-medium">Mark</th>
             <th className="px-4 py-2 text-right font-medium">Unrealized</th>
             <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">Realized</th>
+            <th className="px-4 py-2 text-right font-medium" aria-label="Actions"></th>
           </tr>
         </thead>
         <tbody>
@@ -118,11 +120,34 @@ export function PositionsTable({
                 <td className={`tabular hidden px-4 py-2.5 text-right sm:table-cell ${signClass(p.realizedPnl)}`}>
                   {formatUsd(p.realizedPnl)}
                 </td>
+                <td className="px-4 py-2.5 text-right">
+                  <ClosePositionButton symbol={p.symbol} />
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** One-click flatten of a single position via the server action. */
+function ClosePositionButton({ symbol }: { symbol: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => {
+        const fd = new FormData();
+        fd.set("symbol", symbol);
+        startTransition(() => closePositionAction(fd));
+      }}
+      className="btn px-2.5 py-1 text-2xs"
+      aria-label={`Close ${symbol} position`}
+    >
+      {pending ? "Closing…" : "Close"}
+    </button>
   );
 }

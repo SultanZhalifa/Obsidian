@@ -50,6 +50,19 @@ test("place a paper order and see an open position", async ({ page }) => {
   });
 });
 
+test("close the position with one click", async ({ page }) => {
+  await login(page);
+  await page.goto("/trade");
+  // A position from the previous test exists; close it.
+  const closeBtn = page.getByRole("button", { name: /Close .* position/ }).first();
+  await expect(closeBtn).toBeVisible({ timeout: 20_000 });
+  await closeBtn.click();
+  // After closing, the empty-state for positions appears.
+  await expect(page.getByText("No open positions")).toBeVisible({ timeout: 20_000 });
+  // The equity-curve panel is present on the trade page.
+  await expect(page.getByText("Equity curve")).toBeVisible();
+});
+
 test("create a price alert", async ({ page }) => {
   await login(page);
   await page.goto("/alerts");
