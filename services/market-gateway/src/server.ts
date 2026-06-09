@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { ema, macd, rsi, type Candle, type Timeframe } from "@obsidian/core";
 import { config } from "./config.js";
-import { logger } from "./logger.js";
+import { logger, errInfo } from "./logger.js";
 import { BinanceStream, fetchKlines } from "./binance.js";
 import { MarketState } from "./market-state.js";
 import { persistCandle, dbHealthy } from "./persistence.js";
@@ -135,7 +135,7 @@ async function backfill(): Promise<void> {
         );
       } catch (err) {
         logger.error(
-          { err: (err as Error).message, symbol, tf },
+          { err: errInfo(err), symbol, tf },
           "backfill failed",
         );
       }
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
   if (config.databaseUrl) {
     await alertsRunner.start();
     backfill().catch((err) =>
-      logger.error({ err: (err as Error).message }, "backfill error"),
+      logger.error({ err: errInfo(err) }, "backfill error"),
     );
   } else {
     logger.warn("DATABASE_URL not set; running without persistence/alerts");
@@ -208,6 +208,6 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 main().catch((err) => {
-  logger.error({ err: (err as Error).message }, "fatal startup error");
+  logger.error({ err: errInfo(err) }, "fatal startup error");
   process.exit(1);
 });

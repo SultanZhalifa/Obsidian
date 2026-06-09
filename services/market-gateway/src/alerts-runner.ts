@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@obsidian/db";
 import { alerts, type Alert } from "@obsidian/db/schema";
 import type { Timeframe } from "@obsidian/core";
-import { logger } from "./logger.js";
+import { logger, errInfo } from "./logger.js";
 
 export interface TriggeredAlert {
   alert: Alert;
@@ -51,7 +51,7 @@ export class AlertsRunner {
       }
       this.bySymbol = map;
     } catch (err) {
-      logger.error({ err: (err as Error).message }, "failed to refresh alerts");
+      logger.error({ err: errInfo(err) }, "failed to refresh alerts");
     }
   }
 
@@ -99,7 +99,7 @@ export class AlertsRunner {
       logger.info({ alertId: alert.id, value }, "alert triggered");
     } catch (err) {
       logger.error(
-        { err: (err as Error).message, alertId: alert.id },
+        { err: errInfo(err), alertId: alert.id },
         "failed to persist alert trigger",
       );
     }

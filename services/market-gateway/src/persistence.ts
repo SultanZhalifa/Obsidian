@@ -2,7 +2,7 @@ import { sql as rawSql } from "@obsidian/db";
 import { ohlcv } from "@obsidian/db/schema";
 import type { Candle, Timeframe } from "@obsidian/core";
 import { db } from "@obsidian/db";
-import { logger } from "./logger.js";
+import { logger, errInfo } from "./logger.js";
 
 /**
  * Persist a closed candle (idempotent upsert keyed by symbol+timeframe+openTime).
@@ -40,7 +40,7 @@ export async function persistCandle(
       });
   } catch (err) {
     logger.error(
-      { err: (err as Error).message, symbol, timeframe },
+      { err: errInfo(err), symbol, timeframe },
       "failed to persist candle",
     );
   }
