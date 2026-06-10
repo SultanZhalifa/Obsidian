@@ -97,6 +97,37 @@ export type AlertKind = z.infer<typeof alertKindSchema>;
 export type CreateAlertInput = z.infer<typeof createAlertSchema>;
 
 // ---------------------------------------------------------------------------
+// Chart drawings
+// ---------------------------------------------------------------------------
+
+export const drawingKindSchema = z.enum(["trendline", "horizontal"]);
+
+export const createDrawingSchema = z
+  .object({
+    symbol: symbolSchema,
+    timeframe: timeframeSchema,
+    kind: drawingKindSchema,
+    /** Anchor 1: chart time (epoch seconds) + price. */
+    x1: z.number().int().finite(),
+    y1: z.number().finite(),
+    /** Anchor 2: required for trendlines, omitted for horizontal lines. */
+    x2: z.number().int().finite().optional(),
+    y2: z.number().finite().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.kind === "trendline" && (val.x2 === undefined || val.y2 === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["x2"],
+        message: "A trendline needs a second anchor point",
+      });
+    }
+  });
+
+export type DrawingKind = z.infer<typeof drawingKindSchema>;
+export type CreateDrawingInput = z.infer<typeof createDrawingSchema>;
+
+// ---------------------------------------------------------------------------
 // Gateway WebSocket protocol (client <-> gateway)
 // ---------------------------------------------------------------------------
 

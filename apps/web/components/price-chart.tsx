@@ -5,15 +5,18 @@ import {
   createChart,
   ColorType,
   CrosshairMode,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type CandlestickData,
   type HistogramData,
   type LineData,
   type Time,
+  type MouseEventParams,
 } from "lightweight-charts";
 import type { Candle, ServerMessage, Timeframe } from "@obsidian/core";
-import { ema } from "@obsidian/core";
+import { ema, bollinger, vwap } from "@obsidian/core";
 import { getGatewayClient } from "@/lib/ws-client";
 
 /** Monochrome chart theme derived from the design tokens. */
@@ -27,12 +30,29 @@ const THEME = {
   ema12: "#e6e8eb",
   ema26: "#6b7178",
   volume: "#2f333b",
+  band: "#8fa3bf",
+  vwap: "#cbb079",
+  drawing: "#e6e8eb",
 };
 
-function toLineData(
-  candles: Candle[],
-  values: (number | null)[],
-): LineData[] {
+export type DrawTool = "none" | "trendline" | "horizontal";
+
+export interface DrawingShape {
+  id: string;
+  kind: "trendline" | "horizontal";
+  x1: number; // chart time (epoch seconds)
+  y1: number; // price
+  x2?: number | null;
+  y2?: number | null;
+}
+
+export interface Overlays {
+  ema: boolean;
+  bollinger: boolean;
+  vwap: boolean;
+}
+
+function toLineData(candles: Candle[], values: (number | null)[]): LineData[] {
   const out: LineData[] = [];
   for (let i = 0; i < candles.length; i++) {
     const v = values[i];
@@ -45,15 +65,31 @@ export function PriceChart({
   symbol,
   timeframe,
   initial,
-  showEma,
+  overlays,
+  tool,
+  drawings,
+  onCreateDrawing,
+  onToolConsumed,
 }: {
   symbol: string;
   timeframe: Timeframe;
   initial: Candle[];
-  showEma: boolean;
+  overlays: Overlays;
+  tool: DrawTool;
+  drawings: DrawingShape[];
+  onCreateDrawing: (d: Omit<DrawingShape, "id">) => void;
+  onToolConsumed: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const candlesRef = useRef<Candle[]>(initial);
+
+  // Refs let click handlers see the current tool/callbacks without re-mounting.
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const onCreateRef = useRef(onCreateDrawing);
+  onCreateRef.current = onCreateDrawing;
+  const onConsumedRef = useRef(onToolConsumed);
+  onConsumedRef.current = onToolConsumed;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -66,17 +102,14 @@ export function PriceChart({
         fontFamily: "var(--font-mono)",
         fontSize: 11,
       },
-      grid: {
-        vertLines: { color: THEME.grid },
-        horzLines: { color: THEME.grid },
-      },
+      grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: THEME.border },
       timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false },
       autoSize: true,
     });
 
-    const candleSeries: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries({
+    const candleSeries = chart.addCandlestickSeries({
       upColor: THEME.up,
       downColor: THEME.down,
       borderUpColor: THEME.up,
@@ -85,48 +118,147 @@ export function PriceChart({
       wickDownColor: THEME.down,
     });
 
-    const volumeSeries: ISeriesApi<"Histogram"> = chart.addHistogramSeries({
+    const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
       color: THEME.volume,
     });
-    chart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
-    });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
-    const ema12Series = showEma
+    const ema12Series = overlays.ema
       ? chart.addLineSeries({ color: THEME.ema12, lineWidth: 1, priceLineVisible: false })
       : null;
-    const ema26Series = showEma
+    const ema26Series = overlays.ema
       ? chart.addLineSeries({ color: THEME.ema26, lineWidth: 1, priceLineVisible: false })
       : null;
 
-    function render(candles: Candle[]) {
-      const cData: CandlestickData[] = candles.map((c) => ({
-        time: (c.time / 1000) as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }));
-      const vData: HistogramData[] = candles.map((c) => ({
-        time: (c.time / 1000) as Time,
-        value: c.volume,
-        color: c.close >= c.open ? "rgba(111,191,134,0.35)" : "rgba(208,138,138,0.35)",
-      }));
-      candleSeries.setData(cData);
-      volumeSeries.setData(vData);
+    const bbUpper = overlays.bollinger
+      ? chart.addLineSeries({ color: THEME.band, lineWidth: 1, lineStyle: LineStyle.Dotted, priceLineVisible: false })
+      : null;
+    const bbMiddle = overlays.bollinger
+      ? chart.addLineSeries({ color: THEME.band, lineWidth: 1, priceLineVisible: false })
+      : null;
+    const bbLower = overlays.bollinger
+      ? chart.addLineSeries({ color: THEME.band, lineWidth: 1, lineStyle: LineStyle.Dotted, priceLineVisible: false })
+      : null;
+
+    const vwapSeries = overlays.vwap
+      ? chart.addLineSeries({ color: THEME.vwap, lineWidth: 1, priceLineVisible: false })
+      : null;
+
+    // Drawing series: one line series per trendline, price lines for horizontals.
+    const trendlineSeries: ISeriesApi<"Line">[] = [];
+    const priceLines: IPriceLine[] = [];
+
+    function renderOverlays(candles: Candle[]) {
       if (ema12Series && ema26Series) {
         const closes = candles.map((c) => c.close);
         ema12Series.setData(toLineData(candles, ema(closes, 12)));
         ema26Series.setData(toLineData(candles, ema(closes, 26)));
       }
+      if (bbUpper && bbMiddle && bbLower) {
+        const closes = candles.map((c) => c.close);
+        const bands = bollinger(closes, 20, 2);
+        bbUpper.setData(toLineData(candles, bands.map((b) => (b ? b.upper : null))));
+        bbMiddle.setData(toLineData(candles, bands.map((b) => (b ? b.middle : null))));
+        bbLower.setData(toLineData(candles, bands.map((b) => (b ? b.lower : null))));
+      }
+      if (vwapSeries) {
+        vwapSeries.setData(toLineData(candles, vwap(candles, true)));
+      }
     }
 
-    render(candlesRef.current);
+    function renderDrawings() {
+      // Clear existing.
+      for (const s of trendlineSeries) chart.removeSeries(s);
+      trendlineSeries.length = 0;
+      for (const pl of priceLines) candleSeries.removePriceLine(pl);
+      priceLines.length = 0;
+
+      for (const d of drawings) {
+        if (d.kind === "horizontal") {
+          priceLines.push(
+            candleSeries.createPriceLine({
+              price: d.y1,
+              color: THEME.drawing,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "",
+            }),
+          );
+        } else if (d.x2 != null && d.y2 != null) {
+          const s = chart.addLineSeries({
+            color: THEME.drawing,
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          const a = { time: Math.min(d.x1, d.x2) as Time, value: d.x1 <= d.x2 ? d.y1 : d.y2 };
+          const b = { time: Math.max(d.x1, d.x2) as Time, value: d.x1 <= d.x2 ? d.y2 : d.y1 };
+          s.setData([a, b]);
+          trendlineSeries.push(s);
+        }
+      }
+    }
+
+    function renderPrice(candles: Candle[]) {
+      candleSeries.setData(
+        candles.map((c) => ({
+          time: (c.time / 1000) as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        })),
+      );
+      volumeSeries.setData(
+        candles.map((c) => ({
+          time: (c.time / 1000) as Time,
+          value: c.volume,
+          color: c.close >= c.open ? "rgba(111,191,134,0.35)" : "rgba(208,138,138,0.35)",
+        })),
+      );
+      renderOverlays(candles);
+    }
+
+    renderPrice(candlesRef.current);
+    renderDrawings();
     chart.timeScale().fitContent();
 
-    // Live updates from the gateway.
+    // --- Drawing interaction -------------------------------------------------
+    let pendingPoint: { time: number; price: number } | null = null;
+
+    const onClick = (param: MouseEventParams) => {
+      const activeTool = toolRef.current;
+      if (activeTool === "none" || !param.point || param.time == null) return;
+      const price = candleSeries.coordinateToPrice(param.point.y);
+      if (price == null) return;
+      const time = param.time as number;
+
+      if (activeTool === "horizontal") {
+        onCreateRef.current({ kind: "horizontal", x1: time, y1: price });
+        onConsumedRef.current();
+        return;
+      }
+      // Trendline: collect two clicks.
+      if (!pendingPoint) {
+        pendingPoint = { time, price };
+      } else {
+        onCreateRef.current({
+          kind: "trendline",
+          x1: pendingPoint.time,
+          y1: pendingPoint.price,
+          x2: time,
+          y2: price,
+        });
+        pendingPoint = null;
+        onConsumedRef.current();
+      }
+    };
+    chart.subscribeClick(onClick);
+
+    // --- Live updates --------------------------------------------------------
     const client = getGatewayClient();
     const unSub = client.subscribe(symbol, timeframe);
     const unListen = client.addListener((msg: ServerMessage) => {
@@ -147,27 +279,23 @@ export function PriceChart({
         color: c.close >= c.open ? "rgba(111,191,134,0.35)" : "rgba(208,138,138,0.35)",
       });
 
-      // Maintain the local series for EMA recompute on closed bars.
       const series = candlesRef.current;
       const last = series[series.length - 1];
       if (last && last.time === c.time) series[series.length - 1] = c;
       else series.push(c);
 
-      if (msg.closed && ema12Series && ema26Series) {
-        const closes = series.map((x) => x.close);
-        ema12Series.setData(toLineData(series, ema(closes, 12)));
-        ema26Series.setData(toLineData(series, ema(closes, 26)));
-      }
+      if (msg.closed) renderOverlays(series);
     });
 
     return () => {
+      chart.unsubscribeClick(onClick);
       unListen();
       unSub();
       chart.remove();
     };
-  }, [symbol, timeframe, showEma]);
+    // Re-mount when symbol/timeframe/overlays/drawings change so series match.
+  }, [symbol, timeframe, overlays, drawings]);
 
-  // Reset local candle buffer whenever the backfill changes (symbol/timeframe).
   useEffect(() => {
     candlesRef.current = initial.slice();
   }, [initial]);

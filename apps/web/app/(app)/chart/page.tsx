@@ -3,7 +3,9 @@ import { TIMEFRAMES, type Timeframe } from "@obsidian/core";
 import { getKlines, getTradableSymbols } from "@/lib/market";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureWatchlist } from "@/lib/watchlist";
+import { getDrawings } from "@/lib/drawings";
 import { ChartWorkspace } from "@/components/chart-workspace";
+import type { DrawingShape } from "@/components/price-chart";
 import { OrderBook } from "@/components/orderbook";
 import { TradeTape } from "@/components/trade-tape";
 
@@ -42,7 +44,19 @@ export default async function ChartPage({
     ? watchlist
     : [symbol, ...watchlist];
 
-  const candles = await getKlines(symbol, timeframe, 500);
+  const [candles, drawingRows] = await Promise.all([
+    getKlines(symbol, timeframe, 500),
+    getDrawings(user.id, symbol, timeframe),
+  ]);
+
+  const initialDrawings: DrawingShape[] = drawingRows.map((d) => ({
+    id: d.id,
+    kind: d.kind,
+    x1: d.x1,
+    y1: d.y1,
+    x2: d.x2,
+    y2: d.y2,
+  }));
 
   return (
     <div className="flex h-full flex-col xl:flex-row">
@@ -52,6 +66,7 @@ export default async function ChartPage({
           timeframe={timeframe}
           candles={candles}
           watchlist={selectorSymbols}
+          initialDrawings={initialDrawings}
         />
       </div>
       <aside className="flex shrink-0 flex-col border-t border-line xl:w-80 xl:border-l xl:border-t-0">

@@ -39,12 +39,28 @@ test("add a custom market to the watchlist", async ({ page }) => {
   await expect(page.getByText("DOGE", { exact: false }).first()).toBeVisible();
 });
 
-test("open the chart and see the price header", async ({ page }) => {
+test("open the chart, toggle indicators, and draw a level", async ({ page }) => {
   await login(page);
   await page.goto("/chart?symbol=BTCUSDT&tf=15m");
-  // The chart canvas mounts and the timeframe switcher is present.
-  await expect(page.getByRole("button", { name: "EMA 12/26" })).toBeVisible();
-  await expect(page.locator("canvas").first()).toBeVisible();
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+  // Overlay toggles and sub-panes are present.
+  await page.getByRole("button", { name: "BB", exact: true }).click();
+  await page.getByRole("button", { name: "VWAP", exact: true }).click();
+  await page.getByRole("button", { name: "STOCH", exact: true }).click();
+  await page.getByRole("button", { name: "ATR", exact: true }).click();
+
+  // Draw a horizontal level and confirm it persists across a reload.
+  await page.getByRole("button", { name: "H-Line", exact: true }).click();
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (box) await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.4);
+  await page.waitForTimeout(1500);
+  await page.reload();
+  // The Clear button is enabled only when at least one drawing exists.
+  await expect(page.getByRole("button", { name: "Clear" })).toBeEnabled({
+    timeout: 15_000,
+  });
 });
 
 test("place a paper order and see an open position", async ({ page }) => {

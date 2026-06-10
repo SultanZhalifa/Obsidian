@@ -185,6 +185,35 @@ export const alerts = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Chart drawings (per-user, per-symbol/timeframe annotations)
+// ---------------------------------------------------------------------------
+
+export const drawingKind = pgEnum("drawing_kind", ["trendline", "horizontal"]);
+
+export const drawings = pgTable(
+  "drawings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    symbol: varchar("symbol", { length: 20 }).notNull(),
+    timeframe: varchar("timeframe", { length: 5 }).notNull(),
+    kind: drawingKind("kind").notNull(),
+    /** First anchor: time in epoch seconds (chart time), price on the y-axis. */
+    x1: bigint("x1", { mode: "number" }).notNull(),
+    y1: doublePrecision("y1").notNull(),
+    /** Second anchor (trendline only; horizontal lines ignore x2). */
+    x2: bigint("x2", { mode: "number" }),
+    y2: doublePrecision("y2"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lookupIdx: index("drawings_lookup_idx").on(t.userId, t.symbol, t.timeframe),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Market data: OHLCV (partitioned by month in migration; one row per candle)
 // ---------------------------------------------------------------------------
 
@@ -242,5 +271,6 @@ export type Trade = typeof trades.$inferSelect;
 export type PositionRow = typeof positions.$inferSelect;
 export type Alert = typeof alerts.$inferSelect;
 export type WatchlistRow = typeof watchlist.$inferSelect;
+export type Drawing = typeof drawings.$inferSelect;
 export type OhlcvRow = typeof ohlcv.$inferSelect;
 export type AuditEntry = typeof auditLog.$inferSelect;

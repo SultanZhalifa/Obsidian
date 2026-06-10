@@ -31,7 +31,7 @@ hand-built stroke SVG — there are no emoji or icon fonts.
 | Area | What's real |
 | --- | --- |
 | **Markets** | Live watchlist of 5 pairs — real 24h ticker, % change, high/low, volume, updating per tick over WebSocket. |
-| **Chart** | Real OHLCV candles (REST backfill + live deltas), EMA 12/26 overlays, RSI and MACD sub-panes, 6 timeframes. Powered by TradingView's `lightweight-charts`. |
+| **Chart** | Real OHLCV candles (REST backfill + live deltas), 6 timeframes, EMA / Bollinger / VWAP overlays, RSI / MACD / Stochastic / ATR sub-panes, and persistent drawing tools (trendlines + horizontal levels saved per user/symbol). Powered by TradingView's `lightweight-charts`. |
 | **Order book & tape** | Live bid/ask depth ladder with cumulative-depth bars and a streaming trade tape. |
 | **Paper trading** | Virtual $100k account. Market orders fill at the live price; positions, realized & unrealized P&L are computed by a tested average-cost engine and marked to real-time prices. Long, short, partial-close and flip all handled. |
 | **Alerts** | Price and RSI alerts evaluated by the gateway on every tick, persisted, and pushed to the browser as toasts in real time. |
