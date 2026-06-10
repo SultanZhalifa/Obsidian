@@ -63,24 +63,75 @@ export class BinanceStream {
   private readonly maxBackoffMs = 30_000;
   private closedByUser = false;
   private pingTimer: NodeJS.Timeout | null = null;
+  private readonly symbols: Set<string>;
+  private controlId = 1;
 
   constructor(
-    private readonly symbols: string[],
+    symbols: string[],
     private readonly timeframes: Timeframe[],
     private readonly events: BinanceEvents,
-  ) {}
+  ) {
+    this.symbols = new Set(symbols.map((s) => s.toLowerCase()));
+  }
+
+  /** All stream names for one symbol (trade, depth, ticker, every timeframe). */
+  private streamsForSymbol(s: string): string[] {
+    const sym = s.toLowerCase();
+    return [
+      `${sym}@trade`,
+      `${sym}@depth20@100ms`,
+      `${sym}@ticker`,
+      ...this.timeframes.map((tf) => `${sym}@kline_${tf}`),
+    ];
+  }
 
   private buildStreamNames(): string[] {
     const streams: string[] = [];
-    for (const s of this.symbols) {
-      streams.push(`${s}@trade`);
-      streams.push(`${s}@depth20@100ms`);
-      streams.push(`${s}@ticker`);
-      for (const tf of this.timeframes) {
-        streams.push(`${s}@kline_${tf}`);
-      }
-    }
+    for (const s of this.symbols) streams.push(...this.streamsForSymbol(s));
     return streams;
+  }
+
+  /** Has the gateway already opened upstream streams for this symbol? */
+  hasSymbol(symbol: string): boolean {
+    return this.symbols.has(symbol.toLowerCase());
+  }
+
+  /**
+   * Begin streaming a symbol that isn't already tracked. Sends a Binance WS
+   * SUBSCRIBE control frame if connected; otherwise the symbol is picked up on
+   * the next (re)connect since it's now in the set.
+   */
+  addSymbol(symbol: string): void {
+    const sym = symbol.toLowerCase();
+    if (this.symbols.has(sym)) return;
+    this.symbols.add(sym);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          method: "SUBSCRIBE",
+          params: this.streamsForSymbol(sym),
+          id: this.controlId++,
+        }),
+      );
+      logger.info({ symbol: sym }, "dynamically subscribed symbol");
+    }
+  }
+
+  /** Stop streaming a symbol (UNSUBSCRIBE control frame) and forget it. */
+  removeSymbol(symbol: string): void {
+    const sym = symbol.toLowerCase();
+    if (!this.symbols.has(sym)) return;
+    this.symbols.delete(sym);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          method: "UNSUBSCRIBE",
+          params: this.streamsForSymbol(sym),
+          id: this.controlId++,
+        }),
+      );
+      logger.info({ symbol: sym }, "dynamically unsubscribed symbol");
+    }
   }
 
   start(): void {

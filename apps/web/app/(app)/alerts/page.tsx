@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@obsidian/db";
 import { alerts as alertsTable, type Alert } from "@obsidian/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { WATCHLIST } from "@/lib/env";
+import { ensureWatchlist } from "@/lib/watchlist";
 import { Panel, Badge, EmptyState } from "@/components/ui";
 import { AlertForm } from "@/components/alert-form";
 import { IconBell, IconX, IconCheck } from "@/components/icons";
@@ -30,11 +30,14 @@ export default async function AlertsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const rows = await db
-    .select()
-    .from(alertsTable)
-    .where(eq(alertsTable.userId, user.id))
-    .orderBy(desc(alertsTable.createdAt));
+  const [rows, watchlistSymbols] = await Promise.all([
+    db
+      .select()
+      .from(alertsTable)
+      .where(eq(alertsTable.userId, user.id))
+      .orderBy(desc(alertsTable.createdAt)),
+    ensureWatchlist(user.id),
+  ]);
 
   const active = rows.filter((a) => a.status === "active");
   const triggered = rows.filter((a) => a.status === "triggered");
@@ -50,7 +53,7 @@ export default async function AlertsPage() {
       </div>
 
       <Panel title="New alert">
-        <AlertForm symbols={WATCHLIST} />
+        <AlertForm symbols={watchlistSymbols} />
       </Panel>
 
       <Panel title={`Active (${active.length})`} bodyClassName="overflow-hidden">

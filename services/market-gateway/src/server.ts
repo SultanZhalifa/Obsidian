@@ -12,7 +12,24 @@ const startedAt = Date.now();
 let binanceConnected = false;
 
 const state = new MarketState();
-const hub = new Hub(config.wsPath);
+
+// Boot symbols are always kept streaming (persisted + warm-cached), so they are
+// never dynamically unsubscribed even when no client is watching them.
+const bootSymbols = new Set(config.symbols.map((s) => s.toLowerCase()));
+
+const hub = new Hub(config.wsPath, {
+  onSymbolNeeded(symbol) {
+    if (!stream.hasSymbol(symbol)) {
+      stream.addSymbol(symbol);
+      // Backfill + persist history for the newly-followed symbol so its chart
+      // and indicators have context immediately.
+      void backfillSymbol(symbol);
+    }
+  },
+  onSymbolIdle(symbol) {
+    if (!bootSymbols.has(symbol.toLowerCase())) stream.removeSymbol(symbol);
+  },
+});
 
 const alertsRunner = new AlertsRunner(({ alert, value }) => {
   // Notify all clients of a triggered alert. The browser filters by userId so a
@@ -118,28 +135,32 @@ const stream = new BinanceStream(config.symbols, config.timeframes, {
   },
 });
 
-async function backfill(): Promise<void> {
-  for (const symbol of config.symbols) {
-    for (const tf of config.timeframes) {
-      try {
-        const candles = await fetchKlines(symbol, tf);
-        state.seed(symbol, tf, candles);
-        // Persist the closed historical candles (all but the most recent open one).
+/** Backfill + seed + persist history for one symbol across all timeframes. */
+async function backfillSymbol(symbol: string): Promise<void> {
+  for (const tf of config.timeframes) {
+    try {
+      const candles = await fetchKlines(symbol, tf);
+      state.seed(symbol, tf, candles);
+      // Persist the closed historical candles (all but the most recent open one).
+      if (config.databaseUrl) {
         const closed = candles.slice(0, -1);
         for (const c of closed) {
           await persistCandle(symbol, tf, c);
         }
-        logger.info(
-          { symbol, tf, count: candles.length },
-          "backfilled historical candles",
-        );
-      } catch (err) {
-        logger.error(
-          { err: errInfo(err), symbol, tf },
-          "backfill failed",
-        );
       }
+      logger.info(
+        { symbol, tf, count: candles.length },
+        "backfilled historical candles",
+      );
+    } catch (err) {
+      logger.error({ err: errInfo(err), symbol, tf }, "backfill failed");
     }
+  }
+}
+
+async function backfill(): Promise<void> {
+  for (const symbol of config.symbols) {
+    await backfillSymbol(symbol);
   }
 }
 

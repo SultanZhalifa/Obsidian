@@ -47,6 +47,7 @@ export interface Ticker24h {
 
 /** 24h ticker snapshot for one or more symbols (real data, for SSR watchlist). */
 export async function getTicker24h(symbols: string[]): Promise<Ticker24h[]> {
+  if (symbols.length === 0) return [];
   const url = new URL("/api/v3/ticker/24hr", serverEnv.binanceRest);
   url.searchParams.set(
     "symbols",
@@ -66,4 +67,75 @@ export async function getTicker24h(symbols: string[]): Promise<Ticker24h[]> {
     lowPrice: Number(t.lowPrice),
     quoteVolume: Number(t.quoteVolume),
   }));
+}
+
+export interface SymbolInfo {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+}
+
+let exchangeCache: { at: number; symbols: SymbolInfo[] } | null = null;
+const EXCHANGE_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+/**
+ * The set of currently-tradable USDT spot pairs from Binance exchangeInfo,
+ * cached in-process for an hour. Used to power symbol search. Real data.
+ */
+export async function getTradableSymbols(): Promise<SymbolInfo[]> {
+  if (exchangeCache && Date.now() - exchangeCache.at < EXCHANGE_TTL_MS) {
+    return exchangeCache.symbols;
+  }
+  const url = new URL("/api/v3/exchangeInfo", serverEnv.binanceRest);
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 3600 },
+  });
+  if (!res.ok) throw new Error(`exchangeInfo: ${res.status}`);
+  const data = (await res.json()) as {
+    symbols: {
+      symbol: string;
+      status: string;
+      baseAsset: string;
+      quoteAsset: string;
+      isSpotTradingAllowed: boolean;
+    }[];
+  };
+  const symbols: SymbolInfo[] = data.symbols
+    .filter(
+      (s) =>
+        s.status === "TRADING" &&
+        s.isSpotTradingAllowed &&
+        s.quoteAsset === "USDT",
+    )
+    .map((s) => ({
+      symbol: s.symbol,
+      baseAsset: s.baseAsset,
+      quoteAsset: s.quoteAsset,
+    }))
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+  exchangeCache = { at: Date.now(), symbols };
+  return symbols;
+}
+
+/** Filter tradable symbols by a free-text query (matches base asset or pair). */
+export async function searchSymbols(query: string, limit = 30): Promise<SymbolInfo[]> {
+  const all = await getTradableSymbols();
+  const q = query.trim().toUpperCase();
+  if (!q) {
+    // No query: surface a few common, high-liquidity pairs as suggestions.
+    const common = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX"];
+    return all
+      .filter((s) => common.includes(s.baseAsset))
+      .slice(0, limit);
+  }
+  const starts: SymbolInfo[] = [];
+  const contains: SymbolInfo[] = [];
+  for (const s of all) {
+    if (s.baseAsset.startsWith(q) || s.symbol.startsWith(q)) starts.push(s);
+    else if (s.baseAsset.includes(q)) contains.push(s);
+    if (starts.length >= limit) break;
+  }
+  return [...starts, ...contains].slice(0, limit);
 }

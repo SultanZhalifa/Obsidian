@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import { TIMEFRAMES, type Timeframe } from "@obsidian/core";
-import { getKlines } from "@/lib/market";
-import { WATCHLIST } from "@/lib/env";
+import { getKlines, getTradableSymbols } from "@/lib/market";
+import { getCurrentUser } from "@/lib/auth";
+import { ensureWatchlist } from "@/lib/watchlist";
 import { ChartWorkspace } from "@/components/chart-workspace";
 import { OrderBook } from "@/components/orderbook";
 import { TradeTape } from "@/components/trade-tape";
@@ -18,10 +20,27 @@ export default async function ChartPage({
 }: {
   searchParams: Promise<{ symbol?: string; tf?: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const params = await searchParams;
-  const symbolRaw = (params.symbol ?? WATCHLIST[0] ?? "BTCUSDT").toUpperCase();
-  const symbol = WATCHLIST.includes(symbolRaw) ? symbolRaw : (WATCHLIST[0] ?? "BTCUSDT");
+  const watchlist = await ensureWatchlist(user.id);
+  const requested = (params.symbol ?? watchlist[0] ?? "BTCUSDT").toUpperCase();
+
+  // Allow charting any tradable symbol (e.g. a deep link), not just watchlist
+  // entries. Fall back to the first watchlist symbol if the request is invalid.
+  const tradable = await getTradableSymbols();
+  const tradableSet = new Set(tradable.map((s) => s.symbol));
+  const symbol = tradableSet.has(requested)
+    ? requested
+    : (watchlist[0] ?? "BTCUSDT");
   const timeframe = parseTimeframe(params.tf);
+
+  // The chart's market selector offers the user's watchlist, plus the current
+  // symbol if it isn't already in it.
+  const selectorSymbols = watchlist.includes(symbol)
+    ? watchlist
+    : [symbol, ...watchlist];
 
   const candles = await getKlines(symbol, timeframe, 500);
 
@@ -32,7 +51,7 @@ export default async function ChartPage({
           symbol={symbol}
           timeframe={timeframe}
           candles={candles}
-          watchlist={WATCHLIST}
+          watchlist={selectorSymbols}
         />
       </div>
       <aside className="flex shrink-0 flex-col border-t border-line xl:w-80 xl:border-l xl:border-t-0">

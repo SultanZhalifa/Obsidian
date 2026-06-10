@@ -6,7 +6,7 @@ import {
   getTrades,
   getRealizedEquityCurve,
 } from "@/lib/trading";
-import { WATCHLIST } from "@/lib/env";
+import { ensureWatchlist } from "@/lib/watchlist";
 import { TradeDesk } from "@/components/trade-desk";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +19,11 @@ export default async function TradePage() {
   const account = await getAccount(user.id);
   if (!account) redirect("/login");
 
-  const [positions, trades, equityCurve] = await Promise.all([
+  const [positions, trades, equityCurve, symbols] = await Promise.all([
     getPositions(account.id),
     getTrades(account.id, 100),
     getRealizedEquityCurve(account.id, account.startingCash),
+    ensureWatchlist(user.id),
   ]);
 
   return (
@@ -31,7 +32,7 @@ export default async function TradePage() {
       positions={positions}
       trades={trades}
       equityCurve={equityCurve}
-      symbols={WATCHLIST}
+      symbols={symbols}
     />
   );
 }

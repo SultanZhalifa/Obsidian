@@ -25,6 +25,20 @@ test("register and land on the dashboard with live markets", async ({ page }) =>
   await expect(page.getByText("BTC", { exact: false }).first()).toBeVisible();
 });
 
+test("add a custom market to the watchlist", async ({ page }) => {
+  await login(page);
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Add market" }).click();
+  await page.getByPlaceholder(/Search markets/).fill("DOGE");
+  await page.getByRole("button", { name: /DOGE.*USDT.*Add/s }).first().click();
+  // DOGE now appears in the watchlist and persists across a reload.
+  await expect(page.getByText("DOGE", { exact: false }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.reload();
+  await expect(page.getByText("DOGE", { exact: false }).first()).toBeVisible();
+});
+
 test("open the chart and see the price header", async ({ page }) => {
   await login(page);
   await page.goto("/chart?symbol=BTCUSDT&tf=15m");

@@ -133,6 +133,31 @@ export const positions = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Watchlist (per-user set of followed symbols)
+// ---------------------------------------------------------------------------
+
+export const watchlist = pgTable(
+  "watchlist",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    symbol: varchar("symbol", { length: 20 }).notNull(),
+    /** Manual ordering within the user's watchlist (lower = higher). */
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userSymbolUnique: uniqueIndex("watchlist_user_symbol_unique").on(
+      t.userId,
+      t.symbol,
+    ),
+    userIdx: index("watchlist_user_idx").on(t.userId, t.sortOrder),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Alerts
 // ---------------------------------------------------------------------------
 
@@ -216,5 +241,6 @@ export type Account = typeof accounts.$inferSelect;
 export type Trade = typeof trades.$inferSelect;
 export type PositionRow = typeof positions.$inferSelect;
 export type Alert = typeof alerts.$inferSelect;
+export type WatchlistRow = typeof watchlist.$inferSelect;
 export type OhlcvRow = typeof ohlcv.$inferSelect;
 export type AuditEntry = typeof auditLog.$inferSelect;
