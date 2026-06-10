@@ -65,11 +65,15 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
       },
       animation: {
         "flash-up": "flashUp 0.6s ease-out",
         "flash-down": "flashDown 0.6s ease-out",
         "fade-in": "fadeIn 0.2s ease-out",
+        shimmer: "shimmer 1.5s infinite",
       },
     },
   },

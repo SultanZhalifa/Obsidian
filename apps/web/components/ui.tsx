@@ -1,6 +1,21 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 
+/** A shimmering placeholder block for loading states. */
+export function Skeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={clsx(
+        "relative overflow-hidden rounded bg-bg-2",
+        "after:absolute after:inset-0 after:-translate-x-full after:animate-shimmer",
+        "after:bg-gradient-to-r after:from-transparent after:via-bg-3 after:to-transparent",
+        className,
+      )}
+      aria-hidden="true"
+    />
+  );
+}
+
 export function Panel({
   title,
   actions,

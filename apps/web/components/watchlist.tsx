@@ -51,6 +51,13 @@ export function Watchlist({
     new Map(initial.map((t) => [t.symbol, { ...t, dir: 0 }])),
   );
 
+  // The global "/" shortcut opens the add-market search from anywhere on Markets.
+  useEffect(() => {
+    const open = () => setSearchOpen(true);
+    window.addEventListener("obsidian:open-search", open);
+    return () => window.removeEventListener("obsidian:open-search", open);
+  }, []);
+
   useEffect(() => {
     const client = getGatewayClient();
     const unsubs = symbols.map((s) => client.subscribe(s, "1m"));

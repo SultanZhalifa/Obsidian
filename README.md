@@ -36,6 +36,7 @@ hand-built stroke SVG — there are no emoji or icon fonts.
 | **Paper trading** | Virtual $100k account. Market orders fill at the live price; positions, realized & unrealized P&L are computed by a tested average-cost engine and marked to real-time prices. Long, short, partial-close and flip all handled. |
 | **Alerts** | Price and RSI alerts evaluated by the gateway on every tick, persisted, and pushed to the browser as toasts in real time. |
 | **Admin** | RBAC-gated dashboard: user list, live system/feed health, and the security audit trail. |
+| **PWA & polish** | Installable PWA (manifest + service worker, offline shell — never caches live data), keyboard shortcuts (`g d/c/t/a` to navigate, `/` search, `?` help), loading skeletons, per-route error boundaries, and a reconnect banner when the feed drops. |
 
 ## Architecture
 
