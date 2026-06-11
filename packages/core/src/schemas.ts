@@ -128,6 +128,32 @@ export type DrawingKind = z.infer<typeof drawingKindSchema>;
 export type CreateDrawingInput = z.infer<typeof createDrawingSchema>;
 
 // ---------------------------------------------------------------------------
+// Backtest request
+// ---------------------------------------------------------------------------
+
+export const strategyIdSchema = z.enum([
+  "rsi_reversion",
+  "ma_cross",
+  "macd_cross",
+]);
+
+export const backtestRequestSchema = z.object({
+  symbol: symbolSchema,
+  timeframe: timeframeSchema,
+  strategy: strategyIdSchema,
+  bars: z.number().int().min(100).max(5000),
+  initialCash: z.number().positive().max(10_000_000),
+  feeBps: z.number().min(0).max(100),
+  rsiPeriod: z.number().int().min(2).max(100).optional(),
+  rsiBuyBelow: z.number().min(1).max(99).optional(),
+  rsiSellAbove: z.number().min(1).max(99).optional(),
+  fastPeriod: z.number().int().min(2).max(200).optional(),
+  slowPeriod: z.number().int().min(3).max(400).optional(),
+});
+
+export type BacktestRequest = z.infer<typeof backtestRequestSchema>;
+
+// ---------------------------------------------------------------------------
 // Gateway WebSocket protocol (client <-> gateway)
 // ---------------------------------------------------------------------------
 

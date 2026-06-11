@@ -9,6 +9,7 @@ import {
   IconWallet,
   IconBell,
   IconShield,
+  IconBacktest,
 } from "./icons";
 
 interface NavItem {
@@ -22,6 +23,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard", label: "Markets", icon: IconChart },
   { href: "/chart", label: "Chart", icon: IconCandles },
   { href: "/trade", label: "Trade", icon: IconWallet },
+  { href: "/backtest", label: "Backtest", icon: IconBacktest },
   { href: "/alerts", label: "Alerts", icon: IconBell },
   { href: "/admin", label: "Admin", icon: IconShield, adminOnly: true },
 ];

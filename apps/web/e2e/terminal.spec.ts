@@ -93,6 +93,17 @@ test("close the position with one click", async ({ page }) => {
   await expect(page.getByText("Equity curve")).toBeVisible();
 });
 
+test("run a backtest over real history", async ({ page }) => {
+  await login(page);
+  await page.goto("/backtest");
+  await expect(page.getByRole("heading", { name: "Backtest" })).toBeVisible();
+  await page.getByRole("button", { name: "Run backtest" }).click();
+  // Real multi-page history fetch + compute; allow up to a minute.
+  await expect(page.getByText(/Results ·/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("Total return")).toBeVisible();
+  await expect(page.getByText("Max drawdown")).toBeVisible();
+});
+
 test("create a price alert", async ({ page }) => {
   await login(page);
   await page.goto("/alerts");

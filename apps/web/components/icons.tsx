@@ -134,6 +134,13 @@ export const IconActivity = (p: IconProps) => (
   </Base>
 );
 
+export const IconBacktest = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-8V3" />
+    <path d="M7.5 14h9" />
+  </Base>
+);
+
 /**
  * OBSIDIAN brand emblem, rendered from the original obsidian.svg artwork.
  *

@@ -36,6 +36,60 @@ export async function getKlines(
   }));
 }
 
+/**
+ * Fetch a deep window of real historical candles by stitching multiple Binance
+ * REST pages (max 1000 bars per request), walking backwards from `endTime`.
+ * Returns oldest-first, de-duplicated. Used by the backtester so strategies run
+ * over real, multi-thousand-bar history rather than the chart's 500-bar paint.
+ */
+export async function getHistoricalCandles(
+  symbol: string,
+  timeframe: Timeframe,
+  bars: number,
+): Promise<Candle[]> {
+  const target = Math.min(Math.max(bars, 100), 5000);
+  const collected: Candle[] = [];
+  let endTime: number | undefined;
+
+  while (collected.length < target) {
+    const url = new URL("/api/v3/klines", serverEnv.binanceRest);
+    url.searchParams.set("symbol", symbol.toUpperCase());
+    url.searchParams.set("interval", timeframe);
+    url.searchParams.set("limit", "1000");
+    if (endTime) url.searchParams.set("endTime", String(endTime));
+
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) throw new Error(`klines ${symbol} ${timeframe}: ${res.status}`);
+    const raw = (await res.json()) as unknown[][];
+    if (raw.length === 0) break;
+
+    const page: Candle[] = raw.map((k) => ({
+      time: Number(k[0]),
+      open: Number(k[1]),
+      high: Number(k[2]),
+      low: Number(k[3]),
+      close: Number(k[4]),
+      volume: Number(k[5]),
+    }));
+    // Prepend older page before what we have.
+    collected.unshift(...page);
+    // Next request ends just before this page's first bar.
+    const first = page[0];
+    if (!first) break;
+    endTime = first.time - 1;
+    if (page.length < 1000) break; // no more history available
+  }
+
+  // De-duplicate by open time and sort oldest-first.
+  const byTime = new Map<number, Candle>();
+  for (const c of collected) byTime.set(c.time, c);
+  const sorted = [...byTime.values()].sort((a, b) => a.time - b.time);
+  return sorted.slice(-target);
+}
+
 export interface Ticker24h {
   symbol: string;
   lastPrice: number;

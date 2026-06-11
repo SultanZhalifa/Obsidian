@@ -84,7 +84,9 @@ export async function loginAction(
   await assertSameOrigin();
   const ip = (await clientIp()) ?? "unknown";
 
-  const limit = rateLimit(`login:${ip}`, 10, 0.1); // burst 10, ~6/min sustained
+  // Burst 20 covers legitimate bursts (e.g. several sessions/tests from one
+  // NAT'd IP); the sustained 6/min rate is what blunts brute force.
+  const limit = rateLimit(`login:${ip}`, 20, 0.1);
   if (!limit.allowed) {
     return { error: "Too many attempts. Please wait a moment and try again." };
   }
