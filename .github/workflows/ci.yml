@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
 
 concurrency:
@@ -10,29 +10,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Fast feedback: typecheck + unit tests + production build (no infra needed)
+  # ──────────────────────────────────────────────────────────────────────────
   build-and-test:
-    name: Typecheck, unit tests, build
+    name: Typecheck · unit tests · build
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgres://obsidian:obsidian@localhost:5432/obsidian
       SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+      NEXT_PUBLIC_GATEWAY_WS_URL: ws://localhost:8080/stream
+      GATEWAY_HTTP_URL: http://localhost:8080
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Unit tests (indicators + P&L)
-        run: npm run test --workspace packages/core
-      - name: Build web
-        run: npm run build --workspace apps/web
 
+      - run: npm ci
+
+      - name: Typecheck all workspaces
+        run: npm run typecheck
+
+      - name: Unit tests (core — indicators, P&L, backtest engine)
+        run: npm run test --workspace packages/core
+
+      - name: Build web app
+        run: npm run build --workspace apps/web
+        env:
+          # next build resolves env at compile time; provide plausible values.
+          NEXT_PUBLIC_GATEWAY_WS_URL: ws://localhost:8080/stream
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # E2E — full stack against a real TimescaleDB + live gateway
+  # ──────────────────────────────────────────────────────────────────────────
   e2e:
-    name: End-to-end (real data)
+    name: E2E (Playwright — desktop + mobile)
     runs-on: ubuntu-latest
+    needs: build-and-test
+
     services:
       postgres:
         image: timescale/timescaledb:2.17.2-pg16
@@ -44,6 +62,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U obsidian -d obsidian"
           --health-interval 5s --health-timeout 5s --health-retries 10
+
     env:
       DATABASE_URL: postgres://obsidian:obsidian@localhost:5432/obsidian
       SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
@@ -51,38 +70,58 @@ jobs:
       GATEWAY_HTTP_URL: http://localhost:8080
       SYMBOLS: btcusdt,ethusdt,solusdt,bnbusdt,xrpusdt
       TIMEFRAMES: 1m,5m,15m,1h,4h,1d
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - name: Apply migrations
-        run: npm run db:migrate && npm run timescale --workspace packages/db
-      - name: Build web
+
+      - name: Apply DB migrations + TimescaleDB extensions
+        run: npm run migrate --workspace packages/db && npm run timescale --workspace packages/db
+
+      - name: Build web app
         run: npm run build --workspace apps/web
-      - name: Install Playwright browser
+
+      - name: Install Playwright browsers
         run: npx --workspace apps/web playwright install --with-deps chromium
-      - name: Start gateway
+
+      - name: Start market gateway
         run: |
-          npm run start --workspace services/market-gateway > gateway.log 2>&1 &
+          npm run start --workspace services/market-gateway > /tmp/gateway.log 2>&1 &
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/health > /dev/null; then echo "gateway up"; break; fi
+            curl -sf http://localhost:8080/health > /dev/null && echo "gateway up" && break
             sleep 2
           done
-      - name: Start web
+
+      - name: Start web server (port 3100)
         run: |
-          npm run start --workspace apps/web > web.log 2>&1 &
+          PORT=3100 npm run start --workspace apps/web > /tmp/web.log 2>&1 &
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:3000/login > /dev/null; then echo "web up"; break; fi
+            curl -sf http://localhost:3100/login > /dev/null && echo "web up" && break
             sleep 2
           done
-      - name: Run E2E
+
+      - name: Run E2E suite (desktop + mobile)
         run: npm run e2e --workspace apps/web
-      - name: Upload report on failure
+        env:
+          E2E_BASE_URL: http://localhost:3100
+
+      - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: apps/web/playwright-report
+          retention-days: 7
+
+      - name: Upload gateway log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-log
+          path: /tmp/gateway.log
