@@ -27,7 +27,7 @@ export async function createDrawingAction(
 
   const parsed = createDrawingSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.errors[0]?.message ?? "Invalid drawing." };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid drawing." };
   }
   const result = await createDrawing(user.id, parsed.data);
   if (result.ok) revalidatePath("/chart");

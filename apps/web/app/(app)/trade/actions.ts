@@ -34,7 +34,7 @@ export async function placeOrderAction(
     quantity: Number(formData.get("quantity")),
   });
   if (!parsed.success) {
-    return { error: parsed.error.errors[0]?.message ?? "Invalid order." };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid order." };
   }
   const { symbol, side, quantity } = parsed.data;
 

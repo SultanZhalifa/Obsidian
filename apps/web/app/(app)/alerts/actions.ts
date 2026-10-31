@@ -34,7 +34,7 @@ export async function createAlertAction(
     timeframe: timeframe ? String(timeframe) : undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.errors[0]?.message ?? "Invalid alert." };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid alert." };
   }
   const { symbol, kind, threshold } = parsed.data;
 
