@@ -45,7 +45,7 @@ export async function registerAction(
     displayName: formData.get("displayName") || undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.errors[0]?.message ?? "Invalid input" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const { email, password, displayName } = parsed.data;
 

@@ -34,7 +34,7 @@ export async function runBacktestAction(
 
   const parsed = backtestRequestSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.errors[0]?.message ?? "Invalid request." };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
   }
   const req = parsed.data;
 
